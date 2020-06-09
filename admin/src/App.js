@@ -1,7 +1,7 @@
-import React from "react";
+import React, {useEffect, useState} from 'react'
 import { Redirect, Route } from "react-router-dom";
 import {
-  HydraAdmin,
+  AdminGuesser,
   ResourceGuesser,
   ListGuesser,
   ShowGuesser,
@@ -10,10 +10,13 @@ import {
   FieldGuesser,
   InputGuesser,
   hydraDataProvider as baseHydraDataProvider,
+  hydraSchemaAnalyzer,
+  graphqlDataProvider,
   fetchHydra as baseFetchHydra,
 } from "@api-platform/admin";
 import parseHydraDocumentation from "@api-platform/api-doc-parser/lib/hydra/parseHydraDocumentation";
-import { AutocompleteInput, ReferenceField, ReferenceInput, TextField } from "react-admin";
+import { parseGraphQl } from "@api-platform/api-doc-parser";
+import { AutocompleteInput, ReferenceField, ReferenceInput, TextField, TextInput } from "react-admin";
 import authProvider from "./authProvider";
 import Login from "./layout/Login";
 
@@ -24,9 +27,11 @@ const ReviewsList = (props) => (
     <FieldGuesser source="author" />
     <FieldGuesser source="book" />
     {/* Use react-admin components directly when you want complex fields. */}
-    <ReferenceField label="Book's title" source="book" reference="books">
+    {/*<ReferenceField label="Book's title" source="book" reference="books">
       <TextField source="title" />
-    </ReferenceField>
+    </ReferenceField>*/}
+
+    <TextField source="book.title" />
 
     {/* While deprecated fields are hidden by default, using an explicit FieldGuesser component allows to add them back. */}
     <FieldGuesser source="letter" />
@@ -75,11 +80,21 @@ const ReviewsEdit = (props) => (
     <InputGuesser source="author" />
 
     {/* Use react-admin components directly when you want complex inputs. */}
+    {/*<ReferenceInput
+      source="book"
+      reference="books"
+      label="Books"
+      filterToQuery={(searchText) => ({ title: searchText })}
+    >
+      <AutocompleteInput optionText="title" />
+    </ReferenceInput>*/}
+
     <ReferenceInput
       source="book"
       reference="books"
       label="Books"
       filterToQuery={(searchText) => ({ title: searchText })}
+      format={(v) => v['@id'] ?? v}
     >
       <AutocompleteInput optionText="title" />
     </ReferenceInput>
@@ -138,29 +153,40 @@ const apiDocumentationParser = (entrypoint) =>
       return Promise.reject(result);
     }
   );
-const dataProvider = baseHydraDataProvider(
+const myDataProvider = baseHydraDataProvider(
   entrypoint,
   fetchHydra,
-  apiDocumentationParser
+  apiDocumentationParser,
+  //(entrypoint, options) => parseGraphQl(entrypoint + '/graphql', options),
+  true
 );
 
-export default () => (
-  <HydraAdmin
-    entrypoint={entrypoint}
-    dataProvider={dataProvider}
-    authProvider={authProvider}
-    loginPage={Login}
-  >
-    <ResourceGuesser name="books" />
-    <ResourceGuesser
-      name="reviews"
-      list={ReviewsList}
-      show={ReviewsShow}
-      create={ReviewsCreate}
-      edit={ReviewsEdit}
-    />
+export default () => {
+  const [dataProvider, setDataProvider] = useState(null);
+  //useEffect(() => graphqlDataProvider(entrypoint + '/graphql').then(dataProvider => setDataProvider(dataProvider)), [])
+  useEffect(() => setDataProvider(myDataProvider), [])
 
-    {/* While deprecated resources are hidden by default, using an explicit ResourceGuesser component allows to add them back. */}
-    <ResourceGuesser name="parchments" />
-  </HydraAdmin>
-);
+  if (!dataProvider) {
+    return <div>Loading</div>;
+  }
+  return (
+    <React.StrictMode>
+      <AdminGuesser
+        entrypoint={entrypoint}
+        dataProvider={dataProvider}
+        schemaAnalyzer={hydraSchemaAnalyzer()}
+        authProvider={authProvider}
+        loginPage={Login}
+      >
+          <ResourceGuesser name="books" />
+          <ResourceGuesser
+            name="reviews"
+            list={ReviewsList}
+            show={ReviewsShow}
+            create={ReviewsCreate}
+            edit={ReviewsEdit}
+          />
+      </AdminGuesser>
+    </React.StrictMode>
+  );
+}
